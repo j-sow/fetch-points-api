@@ -90,7 +90,7 @@ func TestAddHandler(t *testing.T) {
         Validate ResponseFunc
     }{
         {
-            []byte(`{"timestamp": "2020-11-15T00:00:00Z", "payer": "PAYER_A", "points": 150}`),
+            []byte(`[{"timestamp": "2020-11-15T00:00:00Z", "payer": "PAYER_A", "points": 150}]`),
             func(j JSONResponse) {
                 if !j.Success {
                     t.Errorf("Failed to add reward as expected: %s", j.Error)
@@ -98,7 +98,7 @@ func TestAddHandler(t *testing.T) {
             },
         },
         {
-            []byte(`{"timestamp": "nonsense", "payer": "PAYER_A", "points": 150}`),
+            []byte(`[{"timestamp": "nonsense", "payer": "PAYER_A", "points": 150}]`),
             func(j JSONResponse) {
                 if j.Success || j.Error != "Invalid timestamp" {
                     t.Errorf("Added reward when failure expected")
@@ -106,15 +106,7 @@ func TestAddHandler(t *testing.T) {
             },
         },
         {
-            []byte(`{"timestamp": "2020-11-15T00:10:00Z", "payer": "PAYER_A", "points": -200}`),
-            func(j JSONResponse) {
-                if j.Success || j.Error != "Insufficient points to apply transaction" {
-                    t.Errorf("Added reward when insufficient points expected")
-                }
-            },
-        },
-        {
-            []byte(`{"timestamp": "2020-11-15T00:20:00Z", "payer": "PAYER_A"}`),
+            []byte(`[{"timestamp": "2020-11-15T00:20:00Z", "payer": "PAYER_A"}]`),
             func(j JSONResponse) {
                 if j.Success || j.Error != "Missing required parameters" {
                     t.Errorf("Added reward when failure expected")
@@ -142,19 +134,17 @@ func TestUseHandler(t *testing.T) {
     server := startServer(t, 8080, lock)
 
     <- lock // Wait for server to start
-    rewards := [][]byte {
-        []byte(`{ "payer": "DANNON", "points": 1000, "timestamp": "2020-11-02T14:00:00Z" }`),
-        []byte(`{ "payer": "UNILEVER", "points": 200, "timestamp": "2020-10-31T11:00:00Z" }`),
-        []byte(`{ "payer": "DANNON", "points": -200, "timestamp": "2020-10-31T15:00:00Z" }`),
-        []byte(`{ "payer": "MILLER COORS", "points": 10000, "timestamp": "2020-11-01T14:00:00Z" }`),
-        []byte(`{ "payer": "DANNON", "points": 300, "timestamp": "2020-10-31T10:00:00Z" }`),
-    }
+    rewards := []byte (`[
+        { "payer": "UNILEVER", "points": 200, "timestamp": "2020-10-31T11:00:00Z" },
+        { "payer": "DANNON", "points": -200, "timestamp": "2020-10-31T15:00:00Z" },
+        { "payer": "DANNON", "points": -100, "timestamp": "2020-11-01T14:20:00Z" },
+        { "payer": "MILLER COORS", "points": 10000, "timestamp": "2020-11-01T14:00:00Z" },
+        { "payer": "DANNON", "points": 300, "timestamp": "2020-10-31T10:00:00Z" }
+    ]`)
 
-    for _, reward := range rewards {
-        _, err := sendPostRequest("http://localhost:8080/add-points", bytes.NewBuffer(reward))
-        if err != nil {
-            t.Errorf("Error making post request: %s", err)
-        }
+    _, err := sendPostRequest("http://localhost:8080/add-points", bytes.NewBuffer(rewards))
+    if err != nil {
+        t.Errorf("Error making post request: %s", err)
     }
 
     type ResponseFunc func(JSONResponse)
@@ -169,8 +159,8 @@ func TestUseHandler(t *testing.T) {
             }
 
             data := j.Data.(map[string]interface{})
-            if len(data) != 3 {
-                t.Errorf("Expected 3 payer deductions; got %d", len(data))
+            if len(data) != 2 {
+                t.Errorf("Expected 2 payer deductions; got %d", len(data))
             }
         }},
         {[]byte(`{"points": 10000}`), func(j JSONResponse) {
@@ -209,24 +199,22 @@ func TestBalanceHandler(t *testing.T) {
     addRewards := func() {
         ts := time.Now()
         rewards := []Reward{
-            {ts, 100, "PAYER_A", 0},
-            {ts.Add(time.Duration(10) * time.Second), 200, "PAYER_B", 0},
-            {ts.Add(time.Duration(20) * time.Second), 200, "PAYER_C", 0},
-            {ts.Add(time.Duration(30) * time.Second), 100, "PAYER_B", 0},
-            {ts.Add(time.Duration(40) * time.Second), 200, "PAYER_C", 0},
+            {ts, 100, "PAYER_A"},
+            {ts.Add(time.Duration(10) * time.Second), 200, "PAYER_B"},
+            {ts.Add(time.Duration(20) * time.Second), 200, "PAYER_C"},
+            {ts.Add(time.Duration(30) * time.Second), 100, "PAYER_B"},
+            {ts.Add(time.Duration(40) * time.Second), 200, "PAYER_C"},
         }
 
-        for _, reward := range rewards {
-            var buff bytes.Buffer
-            err := json.NewEncoder(&buff).Encode(reward)
-            if err != nil {
-                t.Errorf("Error encoding json: %s", err)
-            }
+        var buff bytes.Buffer
+        err := json.NewEncoder(&buff).Encode(rewards)
+        if err != nil {
+            t.Errorf("Error encoding json: %s", err)
+        }
 
-            _, err = sendPostRequest("http://localhost:8080/add-points", &buff)
-            if err != nil {
-                t.Errorf("Error making post request: %s", err)
-            }
+        _, err = sendPostRequest("http://localhost:8080/add-points", &buff)
+        if err != nil {
+            t.Errorf("Error making post request: %s", err)
         }
     }
 

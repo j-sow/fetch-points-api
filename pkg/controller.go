@@ -50,26 +50,29 @@ func (a *RewardAPI) HandleAddPoints (w http.ResponseWriter, r *http.Request) {
         return
     }
 
-    var reward map[string]interface{}
-    err := json.NewDecoder(r.Body).Decode(&reward)
+    var rewards []interface{}
+    err := json.NewDecoder(r.Body).Decode(&rewards)
     if err != nil {
         log.Printf("Failed to decode reward: %s", err)
         http.Error(w, err.Error(), http.StatusBadRequest)
         return
     }
 
-    ts, okTs := reward["timestamp"]
-    payer, okPayer := reward["payer"]
-    points, okPoints := reward["points"]
-    if !okTs || !okPayer || !okPoints {
-        httpJSONResponse(w, JSONResponse{false, nil, "Missing required parameters"})
-        return
-    }
+    for _, ireward := range rewards  {
+        reward := ireward.(map[string]interface{})
+        ts, okTs := reward["timestamp"]
+        payer, okPayer := reward["payer"]
+        points, okPoints := reward["points"]
+        if !okTs || !okPayer || !okPoints {
+            httpJSONResponse(w, JSONResponse{false, nil, "Missing required parameters"})
+            return
+        }
 
-    err = a.store.AddReward(ts.(string), int64(points.(float64)), payer.(string))
-    if err != nil {
-        httpJSONResponse(w, JSONResponse{false, nil, err.Error()})
-        return
+        err = a.store.AddReward(ts.(string), int64(points.(float64)), payer.(string))
+        if err != nil {
+            httpJSONResponse(w, JSONResponse{false, nil, err.Error()})
+            return
+        }
     }
 
     httpJSONResponse(w, JSONResponse{true, nil, nil})

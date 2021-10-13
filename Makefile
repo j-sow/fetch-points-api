@@ -1,8 +1,11 @@
-CC=gcc
+CC=clang #required on ubuntu for http modules?
 
 build:
-	go build -o RunRewardsAPI
+	go build -o RunRewardsAPI cmd/main.go 
 
-test_store:
+run:
+	go run cmd/main.go
+
+test:
 	CC=$(CC) go test -v api/pkg
 
