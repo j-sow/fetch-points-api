@@ -4,6 +4,7 @@ See DESIGN.md for assumptions and design plan
 ## Prerequisites
  - gnu make or equivalent: use either system package manager or Homebrew, if on windows see http://gnuwin32.sourceforge.net/packages/make.htm
  - go (tested with >1.14): See instructions at https://golang.org/doc/install
+ - docker: See instructions at https://docs.docker.com/get-docker/
 
 ## Building
 To build standalone with go
@@ -31,6 +32,17 @@ Default port is 8080, but can be changed with `-host` flag
 To run tests
 ```
 make test
+```
+
+## Dockerized
+To run with docker (no build necessary)
+```
+make run-docker
+```
+
+To run tests with docker
+```
+make test-docker
 ```
 
 ## API

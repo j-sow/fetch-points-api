@@ -118,7 +118,7 @@ func TestAddHandler(t *testing.T) {
     for _, testCase := range testCases {
         j, err := sendPostRequest("http://localhost:8080/add-points", bytes.NewBuffer(testCase.addJSON))
         if err != nil {
-            t.Errorf("Error making post request: %s", err)
+            t.Fatalf("Error making post request: %s", err)
         }
 
         testCase.Validate(j)
@@ -128,6 +128,101 @@ func TestAddHandler(t *testing.T) {
     server.Close()
     <- lock // Wait for server to close
 }
+
+func TestBalanceHandler(t *testing.T) {
+    lock := make(chan struct{}, 1)
+    server := startServer(t, 8080, lock)
+
+    <- lock // Wait for server to start
+    addRewards := func() {
+        ts := time.Now()
+        rewards := []Reward{
+            {ts, 100, "PAYER_A"},
+            {ts.Add(time.Duration(10) * time.Second), 200, "PAYER_B"},
+            {ts.Add(time.Duration(20) * time.Second), 200, "PAYER_C"},
+            {ts.Add(time.Duration(30) * time.Second), 100, "PAYER_B"},
+            {ts.Add(time.Duration(40) * time.Second), 200, "PAYER_C"},
+        }
+
+        var buff bytes.Buffer
+        err := json.NewEncoder(&buff).Encode(rewards)
+        if err != nil {
+            t.Fatalf("Error encoding json: %s", err)
+        }
+
+        _, err = sendPostRequest("http://localhost:8080/add-points", &buff)
+        if err != nil {
+            t.Errorf("Error making post request: %s", err)
+        }
+    }
+
+    type SetupFunc func()
+    type ResponseFunc func(JSONResponse)
+
+    testCases := []struct {
+        Setup SetupFunc
+        Validate ResponseFunc
+    }{
+        {
+            func(){}, 
+            func(j JSONResponse) {
+                if !j.Success || j.Error != nil || j.Data == nil {
+                    t.Errorf("Expected success, but got failure: %s", j.Error)
+                }
+
+                data := j.Data.(map[string]interface{})
+                if len(data) != 0 {
+                    t.Errorf("Expected 0 payer balances; got %d", len(data))
+                }
+            },
+        },
+        {
+            addRewards, 
+            func(j JSONResponse) {
+                if !j.Success || j.Error != nil || j.Data == nil {
+                    t.Errorf("Expected success, but got failure: %s", j.Error)
+                }
+
+                data := j.Data.(map[string]interface{})
+                if len(data) != 3 {
+                    t.Errorf("Expected 3 payer balances; got %d", len(data))
+                }
+
+                expectations := []struct{
+                    payer string 
+                    points int64
+                }{{"PAYER_A", 100},{"PAYER_B", 300},{"PAYER_C", 400}}
+
+                for _, expectation := range expectations {
+                    if points, ok := data[expectation.payer]; ok {
+                        if int64(points.(float64)) != expectation.points {
+                            t.Errorf("Expected balance of %d points for %s; got %d", expectation.points, expectation.payer, int64(points.(float64)))
+                        }
+                    } else {
+                        t.Errorf("Expected balance for %s; found none", expectation.payer)
+                    }
+                }
+            },
+        },
+    }
+
+    for _, testCase := range testCases {
+        testCase.Setup()
+
+        j, err := sendGetRequest("http://localhost:8080/check-balance")
+        if err != nil {
+            t.Errorf("Error making post request: %s", err)
+        }
+
+        testCase.Validate(j)
+    }
+
+
+
+    server.Close()
+    <- lock // Wait for server to close
+}
+
 
 func TestUseHandler(t *testing.T) {
     lock := make(chan struct{}, 1)
@@ -191,93 +286,3 @@ func TestUseHandler(t *testing.T) {
 }
 
 
-func TestBalanceHandler(t *testing.T) {
-    lock := make(chan struct{}, 1)
-    server := startServer(t, 8080, lock)
-
-    <- lock // Wait for server to start
-    addRewards := func() {
-        ts := time.Now()
-        rewards := []Reward{
-            {ts, 100, "PAYER_A"},
-            {ts.Add(time.Duration(10) * time.Second), 200, "PAYER_B"},
-            {ts.Add(time.Duration(20) * time.Second), 200, "PAYER_C"},
-            {ts.Add(time.Duration(30) * time.Second), 100, "PAYER_B"},
-            {ts.Add(time.Duration(40) * time.Second), 200, "PAYER_C"},
-        }
-
-        var buff bytes.Buffer
-        err := json.NewEncoder(&buff).Encode(rewards)
-        if err != nil {
-            t.Errorf("Error encoding json: %s", err)
-        }
-
-        _, err = sendPostRequest("http://localhost:8080/add-points", &buff)
-        if err != nil {
-            t.Errorf("Error making post request: %s", err)
-        }
-    }
-
-    type SetupFunc func()
-    type ResponseFunc func(JSONResponse)
-
-    testCases := []struct {
-        Setup SetupFunc
-        Validate ResponseFunc
-    }{
-        {
-            func(){}, 
-            func(j JSONResponse) {
-                if !j.Success || j.Error != nil || j.Data == nil {
-                    t.Errorf("Expected success, but got failure: %s", j.Error)
-                }
-
-                data := j.Data.(map[string]interface{})
-                if len(data) != 0 {
-                    t.Errorf("Expected 0 payer balances; got %d", len(data))
-                }
-            },
-        },
-        {
-            addRewards, 
-            func(j JSONResponse) {
-                if !j.Success || j.Error != nil || j.Data == nil {
-                    t.Errorf("Expected success, but got failure: %s", j.Error)
-                }
-
-                data := j.Data.(map[string]interface{})
-                if len(data) != 3 {
-                    t.Errorf("Expected 3 payer balances; got %d", len(data))
-                }
-
-                if points, ok := data["PAYER_A"]; !ok || uint32(points.(float64)) != 100 {
-                    t.Errorf("Expected 100 points for PLAYER_A; got %d", points)
-                }
-                
-                if points, ok := data["PAYER_B"]; !ok || uint32(points.(float64)) != 300 {
-                    t.Errorf("Expected 100 points for PLAYER_A; got %d", points)
-                }
-
-                if points, ok := data["PAYER_C"]; !ok || uint32(points.(float64)) != 400 {
-                    t.Errorf("Expected 100 points for PLAYER_A; got %d", points)
-                }
-            },
-        },
-    }
-
-    for _, testCase := range testCases {
-        testCase.Setup()
-
-        j, err := sendGetRequest("http://localhost:8080/check-balance")
-        if err != nil {
-            t.Errorf("Error making post request: %s", err)
-        }
-
-        testCase.Validate(j)
-    }
-
-
-
-    server.Close()
-    <- lock // Wait for server to close
-}

@@ -41,6 +41,7 @@ func (s *RewardStore) AddReward(timeStamp string, points int64, payer string) er
         return errors.New("Invalid timestamp")
     }
 
+    // Add positve points to the store, store negative points as unused deductions to be handled at next spenditure
     if points < 0 {
         if _, ok := s.UnusedDeductions[payer]; !ok {
             s.UnusedDeductions[payer] = -1 * points
@@ -74,7 +75,7 @@ func (s *RewardStore) UsePoints(requested int64) (map[string]int64, error) {
     totals := make(map[string]int64, 0)
     var deductions []Deduction
     
-    // Realize unused deductions
+    // Realize unused deductions per payer
     s.Rewards.Ascend(func (i btree.Item) bool {
         r := i.(Reward)
         if unused, ok := s.UnusedDeductions[r.Payer]; ok {
@@ -103,6 +104,7 @@ func (s *RewardStore) UsePoints(requested int64) (map[string]int64, error) {
         return true
     })
 
+    // Make deductions.
     for _, d := range deductions {
         r := d.Item.(Reward)
         r.Points -= d.Deducted
@@ -113,6 +115,7 @@ func (s *RewardStore) UsePoints(requested int64) (map[string]int64, error) {
         }
     }
 
+    // Starting form oldest points, try to accumulate transactions to equal request amount
     deductions = nil
     s.Rewards.Ascend(func (i btree.Item) bool {
         r := i.(Reward)
@@ -143,6 +146,7 @@ func (s *RewardStore) UsePoints(requested int64) (map[string]int64, error) {
         return nil, errors.New("Not enough points")
     }
 
+    // Make deductions and tabulate per payer deductions and new balances
     for _, d := range deductions {
         r := d.Item.(Reward)
         r.Points -= d.Deducted

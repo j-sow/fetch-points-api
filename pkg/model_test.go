@@ -33,7 +33,6 @@ func TestAdd(t *testing.T) {
 
     var last int64 = 0
     store.Rewards.Ascend(func (i btree.Item) bool {
-        t.Logf("%v", i.(Reward))
         now := i.(Reward).TimeStamp.Unix()
         if now < last {
             t.Errorf("TimeStamps not in order! %s", time.Time(i.(Reward).TimeStamp).Format(time.RFC3339))
@@ -90,32 +89,37 @@ func TestUse(t *testing.T) {
         t.Errorf("Did not expect error; got %s", err)
     }
 
-    numPayers := 0
-    for payer, points := range deductions {
-        if payer == "DANNON" {
-            numPayers += 1
-            if points != -100 {
-                t.Errorf("Expected deduction of 100 points from DANNON: got %d", points)
-            }
-        } else if payer == "UNILEVER" {
-            numPayers += 1
-            if points != -200 {
-                t.Errorf("Expected deduction of 200 points from UNILEVER: got %d", points)
-            }
-        } else if payer == "MILLER COORS" {
-            numPayers += 1
-            if points != -4700 {
-                t.Errorf("Expected deduction of 200 points from MILLER COORS: got %d", points)
-            }
-        }
-    }
-
-    if numPayers != 3 {
-        t.Errorf("Expected number of payers to be 3: got %d", numPayers)
+    if len(deductions) != 3 {
+        t.Errorf("Expected number of payers to be 3: got %d", len(deductions))
     }
 
     balances := store.CheckBalance()
-    for payer, points := range balances {
-        t.Logf("%s: %d", payer, points)
+
+    tests := []struct {
+        payer string
+        deducted int64
+        balance int64
+    }{
+        {"DANNON", -100, 1000},
+        {"UNILEVER", -200, 0},
+        {"MILLER COORS", -4700, 5300},
+    }
+
+    for _, test := range tests {
+        if deducted, ok := deductions[test.payer]; ok {
+            if deducted != test.deducted {
+                t.Errorf("Expected deduction of %d for %s; got %d", test.deducted, test.payer, deducted)
+            }
+        } else {
+            t.Errorf("Expected deduction for %s; found none", test.payer)
+        }
+
+        if balance, ok := balances[test.payer]; ok {
+            if balance != test.balance {
+                t.Errorf("Expected balance of %d for %s; got %d", test.balance, test.payer, balance)
+            }
+        } else {
+            t.Errorf("Expected balance for %s; found none", test.payer)
+        }
     }
 }
