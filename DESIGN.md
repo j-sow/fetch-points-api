@@ -35,7 +35,7 @@
 ## WORKFLOWS
  - On add, insert (Timestamp, Payer, Points) tuple into btree ordered by timestamp
  - On usage, itterate btree in ascending order tabulating usage from each Payer and Timestamp
-   - If total requested amount is met, deduct Points per Timestamp and remove nodes where Points are zero, return deducted Points per Payer
+   - If total requested amount is met, deduct Points per Timestamp, return deducted Points per Payer
    - If total requested amount is unmet, return error stating insufficient Points to complete transaction
  - On check, iterate btree and sum all points per payer
 
@@ -43,4 +43,4 @@
  - Random insertion and inorder traversal of Point tuples 
  - Deduction algorithm
  - Balance algorithm
- - Integration test with Docker
+ - Integration tests for each endpoint

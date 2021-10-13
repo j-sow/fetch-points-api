@@ -8,13 +8,14 @@ import (
 
 type Deduction struct {
     Item btree.Item
-    Deducted uint32
+    Deducted int64
 }
 
 type Reward struct {
-    TimeStamp time.Time
-    Points uint32
-    Payer string
+    TimeStamp time.Time `json:"timestamp"`
+    Points int64 `json:"points"`
+    Payer string `json:"payer"`
+    Used int64 `json:"-"`
 }
 
 func (r Reward) Less(than btree.Item) bool {
@@ -31,31 +32,40 @@ func NewRewardStore() *RewardStore {
     }
 }
 
-func (s *RewardStore) AddReward(timeStamp string, points uint32, payer string) error {
+func (s *RewardStore) AddReward(timeStamp string, points int64, payer string) error {
     ts, err := time.Parse(time.RFC3339, timeStamp)
     if err != nil {
         return errors.New("Invalid timestamp")
+    }
+
+    if points < 0  {
+        balances := s.CheckBalance()
+
+        if payerBalance, ok := balances[payer]; !ok || payerBalance + points < 0 {
+            return errors.New("Insufficient points to apply transaction")
+        }
     }
 
     s.Rewards.ReplaceOrInsert(Reward{
         TimeStamp: ts,
         Points: points,
         Payer: payer,
+        Used: 0,
     })
 
     return nil
 }
 
-func (s *RewardStore) CheckBalance() map[string]uint32 {
-    balances := make(map[string]uint32, 0)
+func (s *RewardStore) CheckBalance() map[string]int64 {
+    balances := make(map[string]int64, 0)
 
     // Ascend tree in increasing time order and sum Points per Payer
     s.Rewards.Ascend(func (i btree.Item) bool {
         r := i.(Reward)
         if _, ok := balances[r.Payer]; ok {
-            balances[r.Payer] += r.Points
+            balances[r.Payer] += r.Points - r.Used
         } else {
-            balances[r.Payer] = r.Points
+            balances[r.Payer] = r.Points - r.Used
         }
 
         return true
@@ -64,15 +74,17 @@ func (s *RewardStore) CheckBalance() map[string]uint32 {
     return balances
 }
 
-func (s *RewardStore) UsePoints(requested uint32) (map[string]uint32, error) {
+func (s *RewardStore) UsePoints(requested int64) (map[string]int64, error) {
     remaining := requested
-    totals := make(map[string]uint32, 0)
+    totals := make(map[string]int64, 0)
     var deductions []Deduction
 
     s.Rewards.Ascend(func (i btree.Item) bool {
         r := i.(Reward)
         var d Deduction
-        if r.Points > remaining {
+        if r.Points == r.Used {
+            return true
+        } else if r.Points - r.Used > remaining {
             d = Deduction{
                 Item: i,
                 Deducted: remaining,
@@ -81,9 +93,9 @@ func (s *RewardStore) UsePoints(requested uint32) (map[string]uint32, error) {
         } else {
             d = Deduction{
                 Item: i,
-                Deducted: r.Points,
+                Deducted: r.Points - r.Used,
             }
-            remaining -= r.Points
+            remaining -= (r.Points - r.Used)
         }
 
         deductions = append(deductions, d)
@@ -100,17 +112,13 @@ func (s *RewardStore) UsePoints(requested uint32) (map[string]uint32, error) {
 
     for _, d := range deductions {
         r := d.Item.(Reward)
-        if d.Deducted != r.Points{
-            r.Points -= d.Deducted
-            s.Rewards.ReplaceOrInsert(r)
-        } else {
-            s.Rewards.Delete(d.Item)
-        }
+        r.Used += d.Deducted
+        s.Rewards.ReplaceOrInsert(r)
 
         if _, ok := totals[r.Payer]; ok {
-            totals[r.Payer] += d.Deducted
+            totals[r.Payer] -= int64(d.Deducted)
         } else {
-            totals[r.Payer] = d.Deducted
+            totals[r.Payer] = -1 * int64(d.Deducted)
         }
     }
 

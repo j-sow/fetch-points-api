@@ -7,23 +7,36 @@ import (
     "github.com/google/btree"
 )
 
+func parseTimeStamp(timeStamp string) time.Time {
+    ts, _ := time.Parse(time.RFC3339, timeStamp)
+    return ts
+}
+
 func TestAdd(t *testing.T) {
     store := NewRewardStore()
 
-    for i := 0; i < 50; i++ {
-        direction := 1
-        if i % 2 == 1 {
-            direction = -1
-        }
-        ts := time.Now().Add(time.Duration(direction * i) * time.Second) 
-        store.AddReward(ts.Format(time.RFC3339), 100, "STEVE_DOT_COM")
-    } 
+    rewards := []struct{
+        ts string
+        points int64
+        payer string
+    } {
+        {"2020-11-02T14:00:00Z", 1000, "DANNON"},
+        {"2020-10-31T11:00:00Z", 200, "UNILEVER"},
+        {"2020-10-31T15:00:00Z", -200, "DANNON"},
+        {"2020-11-01T14:00:00Z", 10000, "MILLER COORS"},
+        {"2020-10-31T10:00:00Z", 300, "DANNON"},
+    }
+
+    for _, reward := range rewards {
+        store.AddReward(reward.ts, reward.points, reward.payer)
+    }
 
     var last int64 = 0
     store.Rewards.Ascend(func (i btree.Item) bool {
+        t.Logf("%v", i.(Reward))
         now := i.(Reward).TimeStamp.Unix()
         if now < last {
-            t.Errorf("TimeStamps not in order! %s", i.(Reward).TimeStamp.Format(time.RFC3339))
+            t.Errorf("TimeStamps not in order! %s", time.Time(i.(Reward).TimeStamp).Format(time.RFC3339))
             return false
         }
 
@@ -56,48 +69,53 @@ func TestBalance(t *testing.T) {
 func TestUse(t *testing.T) {
     store := NewRewardStore()
 
-    ts1 := time.Now()
-    ts2 := ts1.Add(time.Duration(10) * time.Second) 
-    ts3 := ts1.Add(time.Duration(20) * time.Second)
-    store.AddReward(ts1.Format(time.RFC3339), 100, "PAYER_A")
-    store.AddReward(ts2.Format(time.RFC3339), 100, "PAYER_B")
-    store.AddReward(ts3.Format(time.RFC3339), 100, "PAYER_A")
+    rewards := []struct{
+        ts string
+        points int64
+        payer string
+    } {
+        {"2020-11-02T14:00:00Z", 1000, "DANNON"},
+        {"2020-10-31T11:00:00Z", 200, "UNILEVER"},
+        {"2020-10-31T15:00:00Z", -200, "DANNON"},
+        {"2020-11-01T14:00:00Z", 10000, "MILLER COORS"},
+        {"2020-10-31T10:00:00Z", 300, "DANNON"},
+    }
 
-    deductions, err := store.UsePoints(150)
+    for _, reward := range rewards {
+        store.AddReward(reward.ts, reward.points, reward.payer)
+    }
+
+    deductions, err := store.UsePoints(5000)
     if err != nil {
         t.Errorf("Did not expect error; got %s", err)
     }
 
     numPayers := 0
     for payer, points := range deductions {
-        if payer == "PAYER_A" {
+        if payer == "DANNON" {
             numPayers += 1
-            if points != 100 {
-                t.Errorf("Expected deduction of 100 points from PAYER_A: got %d", points)
+            if points != -100 {
+                t.Errorf("Expected deduction of 100 points from DANNON: got %d", points)
             }
-        } else if payer == "PAYER_B" {
+        } else if payer == "UNILEVER" {
             numPayers += 1
-            if points != 50 {
-                t.Errorf("Expected deduction of 100 points from PAYER_B: got %d", points)
+            if points != -200 {
+                t.Errorf("Expected deduction of 200 points from UNILEVER: got %d", points)
+            }
+        } else if payer == "MILLER COORS" {
+            numPayers += 1
+            if points != -4700 {
+                t.Errorf("Expected deduction of 200 points from MILLER COORS: got %d", points)
             }
         }
     }
-    rewardsRemaining := store.Rewards.Len()
-    if rewardsRemaining != 2 {
-        t.Errorf("Expected 2 rewards remaining; got %d", rewardsRemaining)
+
+    if numPayers != 3 {
+        t.Errorf("Expected number of payers to be 3: got %d", numPayers)
     }
 
-    if numPayers != 2 {
-        t.Errorf("Expected number of payers to be 2: got %d", numPayers)
-    }
-
-    _, err = store.UsePoints(3000)
-    if err == nil {
-        t.Errorf("Exepected error; got nil")
-    }
-
-    rewardsRemaining = store.Rewards.Len()
-    if rewardsRemaining != 2 {
-        t.Errorf("Expected 2 rewards remaining; got %d", rewardsRemaining)
+    balances := store.CheckBalance()
+    for payer, points := range balances {
+        t.Logf("%s: %d", payer, points)
     }
 }
